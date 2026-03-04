@@ -1,0 +1,1294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Patria – Biblical Family Tree</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #3a3a3a;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    #header {
+      display: flex;
+      align-items: center;
+      gap: 21px;
+      padding: 11px 21px;
+      background: #2a2a2a;
+      border-bottom: 1px solid #505050;
+      flex-shrink: 0;
+      z-index: 30;
+    }
+    #logo {
+      font-family: Georgia, serif;
+      font-size: 30px;
+      font-weight: 700;
+      color: #c8a85a;
+      letter-spacing: 3px;
+      line-height: 1;
+    }
+    #logo span {
+      font-size: 15px;
+      display: block;
+      color: #888;
+      letter-spacing: 1px;
+      font-weight: 400;
+      font-family: sans-serif;
+    }
+
+    .hbtn {
+      padding: 6px 18px;
+      border-radius: 6px;
+      border: 1px solid #555;
+      background: #3a3a3a;
+      color: #bbb;
+      cursor: pointer;
+      font-size: 18px;
+      transition: background .12s;
+    }
+    .hbtn:hover { background: #505050; color: #fff; }
+
+    #search-wrap { position: relative; }
+    #search-wrap input {
+      padding: 6px 15px;
+      border-radius: 6px;
+      border: 1px solid #555;
+      background: #3a3a3a;
+      color: #ddd;
+      font-size: 18px;
+      width: 300px;
+    }
+    #search-results {
+      position: absolute; top: 110%; left: 0;
+      background: #2a2a2a; border: 1px solid #555; border-radius: 5px;
+      width: 360px; max-height: 300px; overflow-y: auto;
+      z-index: 100; display: none;
+    }
+    #search-results .sr-item {
+      padding: 9px 18px; cursor: pointer; font-size: 18px;
+      border-bottom: 1px solid #444;
+    }
+    #search-results .sr-item:hover { background: #404040; }
+
+    /* ── Layout ── */
+    #main { display: flex; flex: 1; overflow: hidden; }
+    #canvas { flex: 1; overflow: hidden; position: relative; background: #3a3a3a; }
+    #tree-svg { width: 100%; height: 100%; display: block; }
+
+    /* ── Zoom controls ── */
+    #zoom-ctrl {
+      position: absolute; bottom: 14px; left: 14px;
+      display: flex; flex-direction: column; gap: 3px; z-index: 20;
+    }
+    .zbtn {
+      width: 28px; height: 28px; border-radius: 4px;
+      border: 1px solid #555; background: #2e2e2e; color: #ccc;
+      cursor: pointer; font-size: 15px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .zbtn:hover { background: #444; }
+
+    /* ── Legend ── */
+    #legend {
+      position: absolute; bottom: 14px; left: 52px;
+      background: #2a2a2a; border: 1px solid #505050; border-radius: 5px;
+      padding: 7px 10px; font-size: 10px; color: #999; z-index: 20;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .legend-dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ── Tree SVG elements ── */
+    .link { fill: none; stroke: #606060; stroke-width: 1.5; }
+    .marriage-link { fill: none; stroke: #a080c0; stroke-width: 1.3; stroke-dasharray: 5,3; }
+    .spouse-line { fill: none; stroke: #a080c0; stroke-width: 1.3; stroke-dasharray: 5,3; }
+
+    /* person-node = main tree nodes  |  spouse-overlay = spouse cards */
+    .person-node, .spouse-overlay { cursor: pointer; }
+    .person-node:hover .node-card,
+    .spouse-overlay:hover .node-card { filter: brightness(0.92); }
+    .person-node.selected .node-card,
+    .spouse-overlay.selected .node-card {
+      stroke: #f0d070 !important; stroke-width: 2.5 !important;
+    }
+
+    /* toggle icons — inline SVG paths (FA circle-plus / circle-minus) */
+    .toggle-btn { cursor: pointer; }
+    .toggle-btn path { fill: #999; opacity: 0.82; }
+    .toggle-btn:hover path { fill: #ccc; opacity: 1; }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      width: 420px; flex-shrink: 0;
+      background: #f6f4ef;
+      color: #1a1a2e;
+      border-left: 1px solid #ccc;
+      display: flex; flex-direction: column;
+      position: relative;
+      transition: width .25s ease;
+      overflow: hidden;
+    }
+    #sidebar.collapsed { width: 0; }
+
+    #sidebar-toggle {
+      position: absolute; left: -16px; top: 50%;
+      transform: translateY(-50%);
+      width: 16px; height: 48px;
+      background: #f6f4ef; border: 1px solid #ccc;
+      border-right: none; border-radius: 5px 0 0 5px;
+      cursor: pointer; display: flex; align-items: center;
+      justify-content: center; font-size: 10px; color: #777; z-index: 25;
+    }
+
+    #sidebar-inner { flex: 1; overflow-y: auto; padding: 0; }
+
+    #sb-nav {
+      padding: 7px 12px; border-bottom: 1px solid #ddd;
+      background: #f0ede5; gap: 6px; align-items: center;
+    }
+    #sb-nav button {
+      width: 28px; height: 28px; border: 1px solid #ccc;
+      border-radius: 4px; background: #fff; cursor: pointer;
+      font-size: 12px; color: #555; display: flex;
+      align-items: center; justify-content: center;
+    }
+    #sb-nav button:hover:not(:disabled) { background: #e8e4dc; color: #222; }
+    #sb-nav button:disabled { opacity: 0.35; cursor: default; }
+
+    #sb-empty, #sb-bio { padding: 18px; }
+
+    .sb-placeholder { text-align: center; padding: 40px 16px; color: #999; }
+    .sb-placeholder .icon { font-size: 38px; margin-bottom: 12px; }
+
+    /* bio */
+    .bio-name { font-size: 26px; font-weight: 700; color: #1a1a3e; }
+    .bio-sub  { font-size: 15px; color: #888; margin-bottom: 14px; }
+    .bio-notes {
+      font-size: 15px; color: #444; background: #ede9dd;
+      border-radius: 5px; padding: 9px 11px; margin-bottom: 14px;
+      line-height: 1.5;
+    }
+    .bio-section { margin-bottom: 16px; }
+    .bio-section h3 {
+      font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
+      color: #aaa; border-bottom: 1px solid #e0e0e0;
+      padding-bottom: 4px; margin-bottom: 9px;
+    }
+    .label-card {
+      background: #edebe5; border-radius: 5px; padding: 10px 11px;
+      margin-bottom: 9px; font-size: 15px;
+    }
+    .label-card .lc-type { font-size: 12px; color: #999; text-transform: capitalize; }
+    .label-card .lc-name { font-size: 19px; font-weight: 600; color: #1a1a3e; margin: 3px 0; }
+    .label-card .lc-heb  { font-size: 22px; direction: rtl; color: #333; margin: 4px 0; }
+    .label-card .lc-row  { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 5px; }
+    .label-card .lc-key  { font-size: 13px; color: #aaa; text-transform: uppercase; }
+    .label-card .lc-val  { color: #555; font-size: 14px; }
+
+    .rel-item {
+      font-size: 15px; padding: 6px 0; border-bottom: 1px solid #eee;
+      display: flex; gap: 8px; align-items: baseline;
+    }
+    .rel-type { color: #888; font-size: 13px; text-transform: capitalize; min-width: 110px; }
+    .rel-name { color: #1a3a6e; font-weight: 500; cursor: pointer; }
+    .rel-name:hover { text-decoration: underline; }
+    .rel-ref  { color: #ccc; font-size: 13px; }
+
+    /* ── Loading ── */
+    #loading {
+      position: absolute; inset: 0; background: #3a3a3a;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; z-index: 50;
+    }
+    #loading h2 { font-family: Georgia,serif; font-size: 26px; color: #c8a85a; letter-spacing: 4px; }
+    #loading p  { color: #888; font-size: 13px; margin-top: 8px; }
+    .spinner {
+      width: 34px; height: 34px; border: 3px solid #555;
+      border-top-color: #c8a85a; border-radius: 50%;
+      animation: spin .7s linear infinite; margin-top: 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div id="header">
+  <div id="logo">PATRIA <span>Biblical Family Tree</span></div>
+  <div id="search-wrap">
+    <input id="search-input" type="text" placeholder="Search person…" autocomplete="off" />
+    <div id="search-results"></div>
+  </div>
+  <button class="hbtn" id="btn-fit">Fit View</button>
+  <button class="hbtn" id="btn-center">Center</button>
+</div>
+
+<!-- Main -->
+<div id="main">
+  <div id="canvas">
+    <div id="loading">
+      <h2>PATRIA</h2>
+      <p>Loading Biblical genealogy…</p>
+      <div class="spinner"></div>
+    </div>
+
+    <svg id="tree-svg">
+      <defs>
+        <!-- Shared clip path for avatar circle (NW=86, AV_CX=43, AV_CY=38, AV_R=33) -->
+        <clipPath id="avatar-clip">
+          <circle cx="43" cy="38" r="33" />
+        </clipPath>
+      </defs>
+      <g id="tree-root"></g>
+    </svg>
+
+    <div id="zoom-ctrl">
+      <button class="zbtn" id="z-in">+</button>
+      <button class="zbtn" id="z-out">−</button>
+      <button class="zbtn" id="z-fit" style="font-size:11px;">⤢</button>
+    </div>
+
+    <div id="legend">
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#405878"></div> Male
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#784060"></div> Female
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#4e3a88"></div> Divine
+      </div>
+      <div style="color:#666; font-size:9px; padding-top:3px;">+ expand · click = bio</div>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <button id="sidebar-toggle">◀</button>
+    <div id="sidebar-inner">
+      <div id="sb-nav" style="display:none;">
+        <button id="nav-back" disabled title="Back">◀</button>
+        <button id="nav-fwd"  disabled title="Forward">▶</button>
+      </div>
+      <div class="sb-placeholder" id="sb-empty">
+        <div class="icon">📜</div>
+        <p style="font-size:12px;">Click any person in the tree to view their biography.</p>
+      </div>
+      <div id="sb-bio" style="display:none;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════
+   PATRIA – complete JS rewrite
+══════════════════════════════════════ */
+const NW           = 86;
+const NH           = 116;
+const NS_W         = 220;
+const NS_H         = 200;
+const AV_R         = 33;
+const AV_CX        = NW / 2;
+const AV_CY        = AV_R + 5;
+const DEFAULT_ZOOM = 1.7;
+
+// Font Awesome 6 Free — solid circle-plus / circle-minus paths (viewBox 0 0 512 512)
+// Transform to center at (0,0) at 18px: scale(18/512) translate(-256,-256)
+const FA_ICON_SCALE = 'scale(0.03515625) translate(-256,-256)';  // 18/512
+const FA_CIRCLE_PLUS  = 'M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM232 344V280H168c-13.3 0-24-10.7-24-24s10.7-24 24-24h64V168c0-13.3 10.7-24 24-24s24 10.7 24 24v64h64c13.3 0 24 10.7 24 24s-10.7 24-24 24H280v64c0 13.3-10.7 24-24 24s-24-10.7-24-24z';
+const FA_CIRCLE_MINUS = 'M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM184 232H328c13.3 0 24 10.7 24 24s-10.7 24-24 24H184c-13.3 0-24-10.7-24-24s10.7-24 24-24z';
+
+/* ════════════════════════════════════════
+   Global state
+════════════════════════════════════════ */
+let personsMap       = {};
+let labelsMap        = {};
+let relsMap          = {};
+let childrenMap      = {};   // parentId → [childId]
+let motherMap        = {};   // childId → motherId
+let spouseMap        = {};   // husbandId → [wifeId]
+let wifeOfMap        = {};   // wifeId → husbandId
+let mainVisited      = new Set();  // person ids placed in main tree
+
+let svgEl, gRoot, mainG, zoomBehavior;
+let selectedId    = null;
+let d3Root        = null;
+let orphanHierarchies = [];
+let orphanHierarchyOf = {};  // personId → their D3 hierarchy (for on-demand rendering)
+let activeOrphanGrp   = null; // currently shown orphan tree group (only one at a time)
+let orphanStartY  = 20000;  // y below main tree; computed in buildHierarchy
+
+let navHistory = [];   // ids of people viewed this session
+let navIndex   = -1;   // current position in navHistory
+
+/* ════════════════════════════════════════
+   1. Load CSVs
+════════════════════════════════════════ */
+async function loadCSV(path) {
+  const text = await fetch(path).then(r => {
+    if (!r.ok) throw new Error(`Cannot load ${path}: ${r.status} ${r.statusText}`);
+    return r.text();
+  });
+  return Papa.parse(text, { header: true, skipEmptyLines: true }).data;
+}
+
+async function loadAll() {
+  const [persons, labels, rels] = await Promise.all([
+    loadCSV('Person.csv'),
+    loadCSV('PersonLabel.csv'),
+    loadCSV('PersonRelationship.csv'),
+  ]);
+
+  persons.forEach(p => { personsMap[p.person_id] = p; });
+
+  labels.forEach(l => {
+    if (!labelsMap[l.person_id]) labelsMap[l.person_id] = [];
+    labelsMap[l.person_id].push(l);
+  });
+
+  // Pass 1: build raw maps
+  const tempFatherMap = {}; // childId → fatherId
+  rels.forEach(r => {
+    if (!relsMap[r.person_id]) relsMap[r.person_id] = [];
+    relsMap[r.person_id].push(r);
+
+    const type = (r.relationship_type || '').toLowerCase();
+    if (type === 'father' || type === 'creator') {
+      tempFatherMap[r.person_id_2] = r.person_id;
+    }
+    if (type === 'mother') {
+      motherMap[r.person_id_2] = r.person_id;
+    }
+    if (type === 'husband') {
+      if (!spouseMap[r.person_id]) spouseMap[r.person_id] = [];
+      if (!spouseMap[r.person_id].includes(r.person_id_2))
+        spouseMap[r.person_id].push(r.person_id_2);
+      wifeOfMap[r.person_id_2] = r.person_id;
+    }
+  });
+
+  // Pass 2: build childrenMap — all children branch from their father directly
+  Object.entries(tempFatherMap).forEach(([childId, fatherId]) => {
+    if (!childrenMap[fatherId]) childrenMap[fatherId] = [];
+    if (!childrenMap[fatherId].includes(childId)) childrenMap[fatherId].push(childId);
+  });
+
+  // Children with ONLY a mother recorded (no father):
+  //   - If mother has a husband in the data → child goes under husband (enters main tree)
+  //   - Otherwise → child goes under mother (orphan tree)
+  Object.entries(motherMap).forEach(([childId, motherId]) => {
+    if (tempFatherMap[childId]) return;  // already handled above
+    if (!personsMap[motherId]) return;
+    const husbandId = wifeOfMap[motherId];
+    const parentId  = (husbandId && personsMap[husbandId]) ? husbandId : motherId;
+    if (!childrenMap[parentId]) childrenMap[parentId] = [];
+    if (!childrenMap[parentId].includes(childId)) childrenMap[parentId].push(childId);
+  });
+  // All wives are SVG overlays beside their husbands — no D3 wife-branches needed
+}
+
+/* ════════════════════════════════════════
+   2. Build hierarchy
+════════════════════════════════════════ */
+function buildHierarchy() {
+  function makeNode(id) {
+    if (mainVisited.has(id) || !personsMap[id]) return null;
+    mainVisited.add(id);
+    const p = personsMap[id];
+    const kids = (childrenMap[id] || []).map(c => makeNode(c)).filter(Boolean);
+    return {
+      id,
+      name:    p.person_name || id,
+      surname: p.surname     || '',
+      sex:     (p.sex || '').toLowerCase(),
+      tribe:   p.tribe       || '',
+      notes:   p.unique_attribute || p.person_notes || '',
+      children: kids.length ? kids : undefined,
+    };
+  }
+
+  const tree = makeNode('YHVH_1');
+  d3Root = d3.hierarchy(tree);
+  // Place orphan trees below the FULLY-EXPANDED main tree to prevent overlap.
+  // fitView is now fixed to fit only the main tree, so large values are safe.
+  orphanStartY = (d3Root.height + 3) * NS_H;
+
+  // Collapse everything at depth >= 2 initially
+  d3Root.each(d => {
+    if (d.depth >= 2 && d.children) {
+      d._children = d.children;
+      d.children  = null;
+    }
+  });
+}
+
+/* ════════════════════════════════════════
+   3. Layout helpers
+════════════════════════════════════════ */
+function makeTreeLayout() {
+  return d3.tree()
+    .nodeSize([NS_W, NS_H])
+    .separation((a, b) => {
+      const base = a.parent === b.parent ? 1 : 1.3;
+      // b is the LEFT sibling whose overlay wives extend RIGHT toward a
+      const leftOverlayCount = (spouseMap[b.data.id] || []).filter(wid => personsMap[wid]).length;
+      return base + leftOverlayCount * 0.6;
+    });
+}
+
+/* ════════════════════════════════════════
+   4. SVG drawing helpers
+════════════════════════════════════════ */
+// Right-angle elbow connector
+function elbowPath(s, t) {
+  const sx = s.x, sy = s.y + NH;   // bottom-center of source
+  const tx = t.x, ty = t.y;        // top-center of target
+  const my = (sy + ty) / 2;
+  return `M${sx},${sy} L${sx},${my} L${tx},${my} L${tx},${ty}`;
+}
+
+// Avatar colors by sex — off-white cards with sex-tinted borders and avatar fills
+function avatarColors(sex, id) {
+  if (id === 'YHVH_1')
+    return { card: '#eee8f8', border: '#8060b8', avatarBg: '#4e3a88', sil: '#b8a8e8', nameColor: '#2a1050', tribeColor: '#7060a8' };
+  if (id === 'Jesus_1')
+    return { card: '#fdf4de', border: '#c8a85a', avatarBg: '#8a6a20', sil: '#e8cc80', nameColor: '#3a2800', tribeColor: '#9a7a30' };
+  if (sex === 'female')
+    return { card: '#f8eef0', border: '#c08898', avatarBg: '#784060', sil: '#d8a0b8', nameColor: '#2a1020', tribeColor: '#b07080' };
+  // male (default)
+  return { card: '#eef0f6', border: '#7090b4', avatarBg: '#405878', sil: '#90b8d8', nameColor: '#141e30', tribeColor: '#507898' };
+}
+
+// Build person card SVG elements into a <g>
+// idFn: optional accessor to get the person id from the datum (default: d => d.data.id)
+function buildCard(sel, idFn) {
+  sel.each(function(d) {
+    const g       = d3.select(this);
+    const id      = idFn ? idFn(d) : d.data.id;
+    const p       = personsMap[id] || {};
+    const sex     = (p.sex || '').toLowerCase();
+    const name    = p.person_name || id;
+    const surname = p.surname  || '';
+    const tribe   = p.tribe    || '';
+
+    const c = avatarColors(sex, id);
+
+    /* ── Jesus: gold halo ring behind the card ── */
+    if (id === 'Jesus_1') {
+      const pad = 5;
+      g.append('rect')
+        .attr('x', -pad).attr('y', -pad)
+        .attr('width', NW + pad * 2).attr('height', NH + pad * 2)
+        .attr('rx', 12).attr('ry', 12)
+        .attr('fill', 'none')
+        .attr('stroke', '#c8a85a')
+        .attr('stroke-width', 3)
+        .attr('opacity', 0.85);
+    }
+
+    /* ── Card background (single solid color) ── */
+    g.append('rect')
+      .attr('class', 'node-card')
+      .attr('width', NW).attr('height', NH)
+      .attr('rx', 8).attr('ry', 8)
+      .attr('fill', c.card)
+      .attr('stroke', c.border)
+      .attr('stroke-width', 1.5);
+
+    /* ── Avatar group clipped to circle ── */
+    const av = g.append('g').attr('clip-path', 'url(#avatar-clip)');
+
+    // Avatar background fill
+    av.append('circle')
+      .attr('cx', AV_CX).attr('cy', AV_CY)
+      .attr('r', AV_R + 2)          // slightly larger to fill clip exactly
+      .attr('fill', c.avatarBg);
+
+    // Silhouette – head circle
+    av.append('circle')
+      .attr('cx', AV_CX)
+      .attr('cy', AV_CY - 9)
+      .attr('r', 12)
+      .attr('fill', c.sil)
+      .attr('opacity', 0.88);
+
+    // Silhouette – shoulders (half-ellipse, clipped by avatar circle)
+    av.append('ellipse')
+      .attr('cx', AV_CX)
+      .attr('cy', AV_CY + AV_R + 2)   // ellipse center below avatar circle
+      .attr('rx', AV_R - 2)
+      .attr('ry', AV_R - 4)
+      .attr('fill', c.sil)
+      .attr('opacity', 0.80);
+
+    /* ── Avatar circle border ring ── */
+    g.append('circle')
+      .attr('cx', AV_CX).attr('cy', AV_CY)
+      .attr('r', AV_R)
+      .attr('fill', 'none')
+      .attr('stroke', c.border)
+      .attr('stroke-width', 2)
+      .attr('opacity', 0.9);
+
+    /* ── Name text ── */
+    const displayName = name + (surname ? ' ' + surname : '');
+    const nameLine = displayName.length > 12 ? displayName.slice(0, 11) + '…' : displayName;
+
+    g.append('text')
+      .attr('x', AV_CX)
+      .attr('y', AV_CY + AV_R + 14)
+      .attr('text-anchor', 'middle')
+      .attr('dominant-baseline', 'middle')
+      .attr('fill', c.nameColor)
+      .attr('font-size', 10)
+      .attr('font-weight', '600')
+      .attr('pointer-events', 'none')
+      .text(nameLine);
+
+    /* ── Tribe label (small, sex-tinted) ── */
+    if (tribe) {
+      g.append('text')
+        .attr('x', AV_CX).attr('y', NH - 7)
+        .attr('text-anchor', 'middle')
+        .attr('dominant-baseline', 'middle')
+        .attr('fill', c.tribeColor)
+        .attr('font-size', 7.5)
+        .attr('pointer-events', 'none')
+        .text(tribe.slice(0, 15));
+    }
+  });
+}
+
+/* ════════════════════════════════════════
+   5. Main render
+════════════════════════════════════════ */
+function render() {
+  const layout = makeTreeLayout();
+  layout(d3Root);
+
+  /* ── Links ── */
+  const linkSel = mainG.selectAll('path.link')
+    .data(d3Root.links(), d => `${d.source.data.id}→${d.target.data.id}`);
+
+  linkSel.enter().insert('path', ':first-child')
+    .attr('class', 'link')
+    .attr('d', d => elbowPath(d.source, d.target))
+    .merge(linkSel)
+    .transition().duration(300)
+    .attr('d', d => elbowPath(d.source, d.target));
+
+  linkSel.exit().remove();
+
+  /* ── Person nodes ── */
+  const nodeSel = mainG.selectAll('g.person-node')
+    .data(d3Root.descendants(), d => d.data.id);
+
+  const nodeEnter = nodeSel.enter().append('g')
+    .attr('class', d => {
+      const cls = d.data.id === 'YHVH_1' ? 'divine' : d.data.sex === 'female' ? 'female' : 'male';
+      const special = d.data.id === 'Jesus_1' ? ' jesus-node' : '';
+      return `person-node sex-${cls}${special}`;
+    })
+    .attr('transform', d => `translate(${d.x - NW/2},${d.y})`)
+    .on('click', (event, d) => {
+      event.stopPropagation();
+      navigateTo(d.data.id);
+    });
+
+  buildCard(nodeEnter);
+
+  // Toggle buttons
+  nodeEnter.each(function(outerD) {
+    if (outerD.children || outerD._children) {
+      const btn = d3.select(this).append('g')
+        .attr('class', 'toggle-btn')
+        .attr('transform', `translate(${NW/2},${NH + 14})`);
+      btn.append('path').attr('class', 'toggle-icon')
+        .attr('transform', FA_ICON_SCALE)
+        .attr('d', outerD.children ? FA_CIRCLE_MINUS : FA_CIRCLE_PLUS);
+      btn.on('click', (event) => {
+        event.stopPropagation();
+        toggleNode(outerD);
+        render();
+      });
+    }
+  });
+
+  const nodeAll = nodeEnter.merge(nodeSel);
+
+  nodeAll.transition().duration(300)
+    .attr('transform', d => `translate(${d.x - NW/2},${d.y})`);
+
+  nodeAll.each(function(d) {
+    d3.select(this).select('.toggle-btn .toggle-icon').attr('d', d.children ? FA_CIRCLE_MINUS : FA_CIRCLE_PLUS);
+  });
+
+  nodeAll.classed('selected', d => d.data.id === selectedId);
+
+  nodeSel.exit().remove();
+
+  renderSpouseOverlays();
+}
+
+/* ════════════════════════════════════════
+   5b. SVG overlay wives (all wives shown beside husband)
+════════════════════════════════════════ */
+function renderSpouseOverlays() {
+  const spouseData = [];
+  d3Root.descendants().forEach(d => {
+    const husbandId = d.data.id;
+    (spouseMap[husbandId] || []).forEach((spouseId, overlayIdx) => {
+      if (!personsMap[spouseId]) return;
+      spouseData.push({
+        mainNode: d,
+        spouseId,
+        key:  `sp-${husbandId}-${spouseId}`,
+        x: d.x + (NW + 20) * (overlayIdx + 1),
+        y: d.y,
+      });
+    });
+  });
+
+  /* ── Marriage lines ── */
+  const lineSel = mainG.selectAll('line.spouse-line')
+    .data(spouseData, d => d.key);
+
+  lineSel.enter().append('line')
+    .attr('class', 'spouse-line')
+    .merge(lineSel)
+    .transition().duration(300)
+    .attr('x1', d => d.mainNode.x + NW/2)
+    .attr('y1', d => d.mainNode.y + NH/2)
+    .attr('x2', d => d.x - NW/2)
+    .attr('y2', d => d.y + NH/2);
+
+  lineSel.exit().remove();
+
+  /* ── Spouse cards ── */
+  const spSel = mainG.selectAll('g.spouse-overlay')
+    .data(spouseData, d => d.key);
+
+  const spEnter = spSel.enter().append('g')
+    .attr('class', 'spouse-overlay')
+    .attr('transform', d => `translate(${d.x - NW/2},${d.y})`)
+    .on('click', (event, d) => {
+      event.stopPropagation();
+      navigateTo(d.spouseId);
+    });
+
+  buildCard(spEnter, d => d.spouseId);
+
+  spSel.merge(spEnter)
+    .classed('selected', d => d.spouseId === selectedId)
+    .transition().duration(300)
+    .attr('transform', d => `translate(${d.x - NW/2},${d.y})`);
+
+  spSel.exit().remove();
+}
+
+/* ════════════════════════════════════════
+   6. Toggle collapse
+════════════════════════════════════════ */
+function toggleNode(d) {
+  if (d.children) {
+    d._children = d.children;
+    d.children  = null;
+  } else {
+    d.children  = d._children;
+    d._children = null;
+  }
+}
+
+
+/* ════════════════════════════════════════
+   7. Person bio sidebar
+════════════════════════════════════════ */
+function selectPerson(id) {
+  selectedId = id;
+  gRoot.selectAll('g.person-node')
+    .classed('selected', d => d.data.id === id);
+  showBio(id);
+}
+
+const SKIP_REL_TYPES = new Set(['ancestor', 'descendant']);
+
+function showBio(id) {
+  const p = personsMap[id];
+  if (!p) return;
+
+  document.getElementById('sidebar-inner').scrollTop = 0;
+  document.getElementById('sb-empty').style.display = 'none';
+  const bio = document.getElementById('sb-bio');
+  bio.style.display = '';
+
+  const labels = labelsMap[id] || [];
+  const rels   = (relsMap[id] || []).filter(r =>
+    !SKIP_REL_TYPES.has((r.relationship_type || '').toLowerCase())
+  );
+  const sexStr = p.sex ? p.sex.charAt(0).toUpperCase() + p.sex.slice(1) : 'Unknown';
+  const tribe  = p.tribe ? ` · ${p.tribe}` : '';
+
+  const labelCards = labels.map(l => `
+    <div class="label-card">
+      <div class="lc-type">${l.label_type || ''}${l['label-given_by_god'] === 'Y' ? ' ✦' : ''}</div>
+      <div class="lc-name">${l.english_label || ''}</div>
+      ${l.hebrew_label ? `<div class="lc-heb">${l.hebrew_label}</div>` : ''}
+      <div class="lc-row">
+        ${l.hebrew_label_transliterated ? `<div><div class="lc-key">Transliteration</div><div class="lc-val">${l.hebrew_label_transliterated}</div></div>` : ''}
+        ${l.hebrew_label_meaning ? `<div><div class="lc-key">Meaning</div><div class="lc-val">${l.hebrew_label_meaning}</div></div>` : ''}
+        ${l.hebrew_strongs_number ? `<div><div class="lc-key">Heb. Strong's</div><div class="lc-val">${l.hebrew_strongs_number}</div></div>` : ''}
+        ${l.greek_label ? `<div><div class="lc-key">Greek</div><div class="lc-val">${l.greek_label}${l.greek_label_transliterated ? ' ('+l.greek_label_transliterated+')' : ''}</div></div>` : ''}
+        ${l.greek_label_meaning ? `<div><div class="lc-key">Gk. Meaning</div><div class="lc-val">${l.greek_label_meaning}</div></div>` : ''}
+        ${l.greek_strongs_number && l.greek_strongs_number !== 'none' ? `<div><div class="lc-key">Gk. Strong's</div><div class="lc-val">${l.greek_strongs_number}</div></div>` : ''}
+        ${l.label_reference_id ? `<div><div class="lc-key">Reference</div><div class="lc-val">${l.label_reference_id}</div></div>` : ''}
+      </div>
+      ${l.label_notes ? `<div style="font-size:9px;color:#aaa;margin-top:3px;">${l.label_notes}</div>` : ''}
+    </div>`).join('');
+
+  const relRows = rels.map(r => `
+    <div class="rel-item">
+      <span class="rel-type">${r.relationship_type} of</span>
+      <span class="rel-name" data-id="${r.person_id_2}">${(personsMap[r.person_id_2] || {}).person_name || r.person_id_2}</span>
+      <span class="rel-ref">${r.reference_id || ''}</span>
+    </div>`).join('');
+
+  bio.innerHTML = `
+    <div class="bio-name">${p.person_name}${p.surname ? ' ' + p.surname : ''}</div>
+    <div class="bio-sub">${sexStr}${tribe}</div>
+    ${(p.unique_attribute || p.person_notes) ? `<div class="bio-notes">${p.unique_attribute || p.person_notes}</div>` : ''}
+    ${labels.length ? `<div class="bio-section"><h3>Names &amp; Titles</h3>${labelCards}</div>` : ''}
+    ${rels.length   ? `<div class="bio-section"><h3>Relationships</h3>${relRows}</div>` : ''}
+  `;
+
+  bio.querySelectorAll('.rel-name[data-id]').forEach(el => {
+    el.addEventListener('click', () => navigateTo(el.dataset.id));
+  });
+}
+
+/* ════════════════════════════════════════
+   8. Navigate to person in tree
+════════════════════════════════════════ */
+/* History navigation */
+function pushHistory(id) {
+  if (navHistory[navIndex] === id) return;
+  navHistory = navHistory.slice(0, navIndex + 1);
+  navHistory.push(id);
+  navIndex = navHistory.length - 1;
+  updateNavButtons();
+}
+
+function updateNavButtons() {
+  const back = document.getElementById('nav-back');
+  const fwd  = document.getElementById('nav-fwd');
+  if (back) back.disabled = navIndex <= 0;
+  if (fwd)  fwd.disabled  = navIndex >= navHistory.length - 1;
+  const nav = document.getElementById('sb-nav');
+  if (nav) nav.style.display = navHistory.length > 1 ? 'flex' : 'none';
+}
+
+function showOrphanTree(id) {
+  const h = orphanHierarchyOf[id];
+  if (!h) return;
+
+  // Build parentOf map BEFORE collapsing (h.each only traverses .children)
+  function mapAll(d, nm) { nm[d.data.id] = d; (d.children || []).forEach(c => mapAll(c, nm)); (d._children || []).forEach(c => mapAll(c, nm)); }
+  const orphanParentOf = {};
+  const fullNodeMap = {};
+  mapAll(h, fullNodeMap);
+  Object.values(fullNodeMap).forEach(nd => { if (nd.parent) orphanParentOf[nd.data.id] = nd.parent.data.id; });
+
+  // Collapse entire hierarchy to clean slate
+  function collapseAll(d) {
+    if (d.children) { d._children = d.children; d.children = null; }
+    (d._children || []).forEach(collapseAll);
+  }
+  collapseAll(h);
+
+  // Rebuild nodeMap over collapsed state
+  const nm2 = {};
+  function mapAll2(d) { nm2[d.data.id] = d; (d._children || []).forEach(mapAll2); }
+  mapAll2(h);
+
+  // Build chain from root to id using pre-collapse parentOf
+  const chain = [];
+  let cur = id; const seen = new Set();
+  while (cur && !seen.has(cur)) { seen.add(cur); chain.unshift(cur); cur = orphanParentOf[cur]; }
+
+  // Expand chain
+  chain.forEach(nid => {
+    const nd = nm2[nid];
+    if (nd && nd._children) { nd.children = nd._children; nd._children = null; }
+  });
+
+  // Apply layout
+  const layout = d3.tree().nodeSize([NS_W, NS_H]);
+  layout(h);
+
+  // Find person's position in layout (use nm2 — already has all nodes)
+  const personNode = nm2[id];
+  if (!personNode) return;
+
+  // Place tree in a dedicated area above the main tree (y=-5000), always clear
+  const svg = document.getElementById('tree-svg');
+  const W = svg.clientWidth, H = svg.clientHeight;
+  const ORPHAN_Y = -5000;
+  const gx = -personNode.x;          // center the person at x=0
+  const gy = ORPHAN_Y - personNode.y; // person's card top at ORPHAN_Y
+
+  // Remove previous orphan group and render new one
+  if (activeOrphanGrp) { activeOrphanGrp.remove(); activeOrphanGrp = null; }
+  activeOrphanGrp = gRoot.append('g')
+    .attr('class', 'active-orphan-tree')
+    .attr('transform', `translate(${gx},${gy})`);
+
+  renderOrphanTree(h, activeOrphanGrp, layout);
+
+  // Highlight selected
+  activeOrphanGrp.selectAll('g.person-node').classed('selected', d => d.data.id === id);
+
+  // Pan/zoom to person
+  svgEl.transition().duration(450).call(
+    zoomBehavior.transform,
+    d3.zoomIdentity
+      .translate(W/2 - DEFAULT_ZOOM * (gx + personNode.x),
+                 H/2 - DEFAULT_ZOOM * (gy + personNode.y + NH/2))
+      .scale(DEFAULT_ZOOM)
+  );
+}
+
+function navigateTo(id, skipHistory) {
+  if (!personsMap[id]) return;
+  if (!skipHistory) pushHistory(id);
+
+  // Hide any previously shown orphan tree
+  if (activeOrphanGrp) { activeOrphanGrp.remove(); activeOrphanGrp = null; }
+
+  selectPerson(id);
+
+  if (mainVisited.has(id)) {
+    // Person is in the main D3 tree — expand path and center
+    expandAndFocus(id);
+    render();
+    const target = findNode(id);
+    if (target) {
+      centerNode(target);
+      gRoot.selectAll('g.person-node').classed('selected', d => d.data.id === id);
+      gRoot.selectAll('g.spouse-overlay').classed('selected', d => d.spouseId === id);
+    }
+  } else if (orphanHierarchyOf[id]) {
+    // Person is in an orphan tree — show it on demand
+    showOrphanTree(id);
+  } else {
+    // Person is a spouse overlay only — just highlight
+    gRoot.selectAll('g.spouse-overlay').classed('selected', d => d.spouseId === id);
+  }
+}
+
+function findNode(id) {
+  // Search visible nodes only (after expandAndFocus, target should be visible)
+  let found = null;
+  function search(d) {
+    if (d.data.id === id) { found = d; return; }
+    if (found) return;
+    (d.children || []).forEach(search);
+  }
+  search(d3Root);
+  return found;
+}
+
+function expandAndFocus(id) {
+  // Build parent map from childrenMap
+  const parentOf = {};
+  Object.entries(childrenMap).forEach(([pid, kids]) => {
+    kids.forEach(kid => { parentOf[kid] = pid; });
+  });
+
+  // Build chain from root down to target id
+  const chain = [];
+  let cur = id;
+  const seen = new Set();
+  while (cur && !seen.has(cur)) { seen.add(cur); chain.unshift(cur); cur = parentOf[cur]; }
+
+  // Step 1: Collapse EVERYTHING first (clean slate — prevents prior navigations from leaking)
+  function collapseAll(d) {
+    if (d.children) { d._children = d.children; d.children = null; }
+    (d._children || []).forEach(collapseAll);
+  }
+  collapseAll(d3Root);
+
+  // Step 2: Build nodeMap now that all nodes are in _children chains
+  const nodeMap = {};
+  function mapAll(d) {
+    nodeMap[d.data.id] = d;
+    (d._children || []).forEach(mapAll);
+  }
+  mapAll(d3Root);
+
+  // Step 3: Expand only chain nodes — shows path to target + target's direct children
+  chain.forEach(nid => {
+    const d = nodeMap[nid];
+    if (d && d._children) { d.children = d._children; d._children = null; }
+  });
+  // Non-chain siblings are now visible collapsed leaves (correct accordion behavior)
+}
+
+function zoomToXY(x, y) {
+  const svg = document.getElementById('tree-svg');
+  const W = svg.clientWidth, H = svg.clientHeight;
+  svgEl.transition().duration(450).call(
+    zoomBehavior.transform,
+    d3.zoomIdentity
+      .translate(W/2 - DEFAULT_ZOOM * x, H/2 - DEFAULT_ZOOM * (y + NH/2))
+      .scale(DEFAULT_ZOOM)
+  );
+}
+
+function centerNode(d) {
+  // render() already called makeTreeLayout — don't call again or positions shift
+  const svg = document.getElementById('tree-svg');
+  const W = svg.clientWidth, H = svg.clientHeight;
+  // Center horizontally between node and parent (so parent is visible above)
+  const parentX = d.parent ? d.parent.x : d.x;
+  const cx = (d.x + parentX) / 2;
+  // svg.clientWidth already excludes the sidebar, so W/2 is the correct center
+  const treeCX = W / 2;
+  svgEl.transition().duration(450).call(
+    zoomBehavior.transform,
+    d3.zoomIdentity
+      .translate(treeCX - DEFAULT_ZOOM * cx, H/2 - DEFAULT_ZOOM * (d.y - NS_H/2 + NH/2))
+      .scale(DEFAULT_ZOOM)
+  );
+}
+
+/* ════════════════════════════════════════
+   9. Fit / Center / Zoom
+════════════════════════════════════════ */
+function fitView() {
+  const svg = document.getElementById('tree-svg');
+  const W = svg.clientWidth, H = svg.clientHeight;
+  const pad = 60;
+
+  // Fit to visible main-tree nodes only (not the orphan section)
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+
+  // Walk only visible (non-collapsed) main tree nodes
+  function walkVisible(d) {
+    const nx = d.x, ny = d.y;
+    if (nx - NW/2 < minX) minX = nx - NW/2;
+    // account for spouse overlays to the right
+    const ov = (spouseMap[d.data.id] || []).filter(w => personsMap[w]).length;
+    const rx = nx + NW/2 + ov * (NW + 20);
+    if (rx > maxX) maxX = rx;
+    if (ny < minY) minY = ny;
+    if (ny + NH > maxY) maxY = ny + NH;
+    if (d.children) d.children.forEach(walkVisible);
+  }
+  makeTreeLayout()(d3Root);
+  walkVisible(d3Root);
+
+  if (minX === Infinity) return;
+  const cw = maxX - minX, ch = maxY - minY;
+  const s = Math.min((W - pad*2) / cw, (H - pad*2) / ch, 2);
+  svgEl.transition().duration(500).call(
+    zoomBehavior.transform,
+    d3.zoomIdentity
+      .translate(W/2 - s*(minX + cw/2), H/2 - s*(minY + ch/2))
+      .scale(s)
+  );
+}
+
+function centerRoot() {
+  // Used only on startup to center the tree root (YHVH)
+  const svg = document.getElementById('tree-svg');
+  const W = svg.clientWidth;
+  svgEl.transition().duration(500).call(
+    zoomBehavior.transform,
+    d3.zoomIdentity.translate(W/2 - DEFAULT_ZOOM * d3Root.x, 80).scale(DEFAULT_ZOOM)
+  );
+}
+
+function centerSelected() {
+  // Center button: re-center on last selected person, or Adam if none selected
+  const id = selectedId || 'Adam_1';
+  if (!personsMap[id]) return;
+  navigateTo(id, /*skipHistory=*/true);
+}
+
+/* ════════════════════════════════════════
+   10. Search
+════════════════════════════════════════ */
+function initSearch() {
+  const input   = document.getElementById('search-input');
+  const results = document.getElementById('search-results');
+
+  input.addEventListener('input', () => {
+    const q = input.value.trim().toLowerCase();
+    results.innerHTML = '';
+    if (q.length < 2) { results.style.display = 'none'; return; }
+
+    const hits = Object.values(personsMap)
+      .filter(p =>
+        (p.person_name || '').toLowerCase().includes(q) ||
+        (p.unique_attribute || '').toLowerCase().includes(q) ||
+        (p.tribe || '').toLowerCase().includes(q))
+      .slice(0, 24);
+
+    if (!hits.length) { results.style.display = 'none'; return; }
+    hits.forEach(p => {
+      const div = document.createElement('div');
+      div.className = 'sr-item';
+      div.textContent = `${p.person_name}${p.surname ? ' '+p.surname : ''}${p.tribe ? ' · '+p.tribe : ''}`;
+      div.addEventListener('click', () => {
+        results.style.display = 'none';
+        input.value = '';
+        navigateTo(p.person_id);
+      });
+      results.appendChild(div);
+    });
+    results.style.display = 'block';
+  });
+
+  document.addEventListener('click', e => {
+    if (!document.getElementById('search-wrap').contains(e.target))
+      results.style.display = 'none';
+  });
+}
+
+/* ════════════════════════════════════════
+   11. Controls init
+════════════════════════════════════════ */
+function initControls() {
+  svgEl = d3.select('#tree-svg');
+  gRoot = svgEl.select('#tree-root');
+  mainG = gRoot.append('g').attr('class', 'main-group');
+
+  zoomBehavior = d3.zoom()
+    .scaleExtent([0.04, 4])
+    .on('zoom', e => gRoot.attr('transform', e.transform));
+
+  svgEl.call(zoomBehavior).on('dblclick.zoom', null);
+
+  document.getElementById('z-in').addEventListener('click',
+    () => svgEl.transition().call(zoomBehavior.scaleBy, 1.35));
+  document.getElementById('z-out').addEventListener('click',
+    () => svgEl.transition().call(zoomBehavior.scaleBy, 1/1.35));
+  document.getElementById('z-fit').addEventListener('click', fitView);
+  document.getElementById('btn-fit').addEventListener('click', fitView);
+  document.getElementById('btn-center').addEventListener('click', centerSelected);
+
+  // History navigation
+  document.getElementById('nav-back').addEventListener('click', () => {
+    if (navIndex > 0) { navIndex--; navigateTo(navHistory[navIndex], true); updateNavButtons(); }
+  });
+  document.getElementById('nav-fwd').addEventListener('click', () => {
+    if (navIndex < navHistory.length - 1) { navIndex++; navigateTo(navHistory[navIndex], true); updateNavButtons(); }
+  });
+
+  // Sidebar toggle
+  let collapsed = false;
+  const sidebar = document.getElementById('sidebar');
+  const togBtn  = document.getElementById('sidebar-toggle');
+  togBtn.addEventListener('click', () => {
+    collapsed = !collapsed;
+    sidebar.classList.toggle('collapsed', collapsed);
+    togBtn.textContent = collapsed ? '▶' : '◀';
+  });
+
+  // Click canvas background → deselect
+  svgEl.on('click', () => {
+    selectedId = null;
+    gRoot.selectAll('g.person-node').classed('selected', false);
+    document.getElementById('sb-empty').style.display = '';
+    document.getElementById('sb-bio').style.display   = 'none';
+  });
+}
+
+/* ════════════════════════════════════════
+   12. Orphan trees
+════════════════════════════════════════ */
+function makeOrphanNode(id, visited) {
+  if (visited.has(id) || mainVisited.has(id) || !personsMap[id]) return null;
+  visited.add(id);
+  const p = personsMap[id];
+  const kids = (childrenMap[id] || []).map(c => makeOrphanNode(c, visited)).filter(Boolean);
+  return {
+    id,
+    name:    p.person_name || id,
+    surname: p.surname     || '',
+    sex:     (p.sex || '').toLowerCase(),
+    tribe:   p.tribe       || '',
+    notes:   p.unique_attribute || p.person_notes || '',
+    children: kids.length ? kids : undefined,
+  };
+}
+
+function buildOrphanTrees() {
+  // Build parent map for non-main persons to identify roots
+  const orphanParent = {};
+  Object.keys(personsMap).forEach(id => {
+    if (mainVisited.has(id)) return;
+    (childrenMap[id] || []).forEach(kid => {
+      if (!mainVisited.has(kid)) orphanParent[kid] = id;
+    });
+  });
+
+  const orphanVisited = new Set();
+  const roots = Object.keys(personsMap)
+    .filter(id => !mainVisited.has(id) && !orphanParent[id])
+    .sort((a, b) => {
+      const sa = parseInt(personsMap[a].person_sequence) || 9999;
+      const sb = parseInt(personsMap[b].person_sequence) || 9999;
+      return sa - sb;
+    });
+
+  orphanHierarchies = roots
+    .map(id => {
+      const tree = makeOrphanNode(id, orphanVisited);
+      return tree ? d3.hierarchy(tree) : null;
+    })
+    .filter(Boolean);
+
+  // Index every person → their hierarchy for on-demand rendering
+  orphanHierarchyOf = {};
+  orphanHierarchies.forEach(h => {
+    h.each(d => { orphanHierarchyOf[d.data.id] = h; });
+  });
+}
+
+function renderOrphanTrees() {
+  if (!orphanHierarchies.length) return;
+  const layout = d3.tree().nodeSize([NS_W, NS_H]);
+
+  orphanNodePos = {};  // reset navigation positions
+
+  // Place orphan trees well below the fully-expanded main tree
+  let curX = 0;
+  let curY = orphanStartY;
+  const ROW_MAX_W = 8000;
+  const ROW_GAP   = NS_H + 100; // 300px between orphan rows
+
+  orphanHierarchies.forEach(h => {
+    // Collapse all but root so initial footprint is just one card
+    h.each(d => {
+      if (d.depth >= 1 && d.children) {
+        d._children = d.children;
+        d.children  = null;
+      }
+    });
+    layout(h);
+
+    // Bounding box — also account for spouse overlays
+    let minX = Infinity, maxX = -Infinity;
+    h.descendants().forEach(d => {
+      if (d.x - NW/2 < minX) minX = d.x - NW/2;
+      const overlayCount = (spouseMap[d.data.id] || []).filter(w => personsMap[w]).length;
+      const rightEdge = d.x + NW/2 + overlayCount * (NW + 20);
+      if (rightEdge > maxX) maxX = rightEdge;
+    });
+    const treeW = Math.max(maxX - minX, NW);
+
+    if (curX > 0 && curX + treeW > ROW_MAX_W) {
+      curY += ROW_GAP;
+      curX  = 0;
+    }
+
+    const xOff = curX - minX;
+    const yOff = curY;
+    curX += treeW + 100;  // gap between orphan trees
+
+    const grp = gRoot.append('g')
+      .attr('class', 'orphan-tree')
+      .attr('transform', `translate(${xOff},${yOff})`);
+
+    // Store node positions for navigation
+    h.descendants().forEach(d => {
+      orphanNodePos[d.data.id] = { gx: xOff, gy: yOff, nx: d.x, ny: d.y };
+    });
+
+    renderOrphanTree(h, grp, layout);
+  });
+}
+
+function renderOrphanTree(h, grp, layout) {
+  grp.selectAll('*').remove();
+  layout(h);
+
+  // Links
+  grp.selectAll('path.link')
+    .data(h.links())
+    .enter().insert('path', ':first-child')
+    .attr('class', 'link')
+    .attr('d', d => elbowPath(d.source, d.target));
+
+  // Nodes
+  const nodes = grp.selectAll('g.orphan-node')
+    .data(h.descendants())
+    .enter().append('g')
+    .attr('class', 'person-node orphan-node')
+    .attr('transform', d => `translate(${d.x - NW/2},${d.y})`)
+    .on('click', (event, d) => {
+      event.stopPropagation();
+      selectPerson(d.data.id);
+    });
+
+  buildCard(nodes);
+
+  // Toggle buttons
+  nodes.each(function(outerD) {
+    if (outerD.children || outerD._children) {
+      const btn = d3.select(this).append('g')
+        .attr('class', 'toggle-btn')
+        .attr('transform', `translate(${NW/2},${NH + 14})`);
+      btn.append('path').attr('class', 'toggle-icon')
+        .attr('transform', FA_ICON_SCALE)
+        .attr('d', outerD.children ? FA_CIRCLE_MINUS : FA_CIRCLE_PLUS);
+      btn.on('click', (event) => {
+        event.stopPropagation();
+        toggleNode(outerD);
+        renderOrphanTree(h, grp, layout);
+      });
+    }
+  });
+}
+
+/* ════════════════════════════════════════
+   13. Bootstrap
+════════════════════════════════════════ */
+async function main() {
+  try {
+    await loadAll();
+    buildHierarchy();
+    initControls();
+    render();
+    buildOrphanTrees();
+    // Orphan trees are rendered on-demand when selected, not pre-rendered
+    setTimeout(centerRoot, 150);
+    document.getElementById('loading').style.display = 'none';
+    initSearch();
+  } catch(err) {
+    console.error(err);
+    document.getElementById('loading').innerHTML = `
+      <h2 style="color:#c55">Error</h2>
+      <p style="color:#aaa;max-width:360px;text-align:center;">${err.message}</p>
+      <p style="color:#666;font-size:11px;margin-top:10px;">
+        Serve with: <code>python3 -m http.server 8080</code> then open http://localhost:8080
+      </p>`;
+  }
+}
+
+main();
+</script>
+</body>
+</html>
