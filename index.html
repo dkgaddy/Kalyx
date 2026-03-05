@@ -169,8 +169,42 @@
 
     #sb-empty, #sb-bio { padding: 18px; }
 
-    .sb-placeholder { text-align: center; padding: 40px 16px; color: #999; }
-    .sb-placeholder .icon { font-size: 38px; margin-bottom: 12px; }
+    .sb-placeholder { text-align: center; padding: 40px 20px 32px; color: #999; }
+    .sb-placeholder .icon { font-size: 38px; margin-bottom: 18px; }
+    .sb-placeholder .tc-title {
+      font-family: Georgia, serif;
+      font-size: 28px;
+      font-weight: 700;
+      color: #c8a85a;
+      letter-spacing: 3px;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+    .sb-placeholder .tc-sub {
+      font-size: 13px;
+      color: #aaa;
+      letter-spacing: 1px;
+      font-weight: 400;
+      margin-bottom: 20px;
+    }
+    .sb-placeholder .tc-divider {
+      width: 48px; height: 1px;
+      background: #c8a85a;
+      opacity: 0.4;
+      margin: 0 auto 20px;
+    }
+    .sb-placeholder .tc-desc {
+      font-size: 13px;
+      color: #777;
+      line-height: 1.6;
+      margin-bottom: 22px;
+      text-align: left;
+    }
+    .sb-placeholder .tc-prompt {
+      font-size: 12px;
+      color: #aaa;
+      font-style: italic;
+    }
 
     /* bio */
     .bio-name { font-size: 26px; font-weight: 700; color: #1a1a3e; }
@@ -220,6 +254,69 @@
       animation: spin .7s linear infinite; margin-top: 16px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Mobile: header fits without scrolling ── */
+    @media (max-width: 800px) {
+      #header { gap: 8px; padding: 8px 10px; flex-wrap: nowrap; }
+      #logo { font-size: 18px; letter-spacing: 1px; flex-shrink: 0; }
+      #logo span { display: none; }
+      #search-wrap { flex: 1; min-width: 0; }
+      #search-wrap input { width: 100%; font-size: 14px; padding: 5px 8px; }
+      #search-results { width: calc(100vw - 20px); max-width: 360px; }
+      .hbtn { font-size: 13px; padding: 5px 9px; flex-shrink: 0; }
+    }
+
+    /* ── Mobile Portrait: sidebar becomes bottom panel ── */
+    @media (max-width: 800px) and (orientation: portrait) {
+      #main { flex-direction: column; }
+      #canvas { flex: 1; min-height: 0; }
+
+      #sidebar {
+        width: 100%;
+        height: 36vh;
+        flex-shrink: 0;
+        border-left: none;
+        border-top: 1px solid #ccc;
+        transition: height .25s ease;
+      }
+      #sidebar.collapsed { width: 100% !important; height: 0; }
+
+      #sidebar-toggle {
+        left: 50%; top: -16px;
+        transform: translateX(-50%);
+        width: 48px; height: 16px;
+        border-radius: 5px 5px 0 0;
+        border-right: 1px solid #ccc;
+        border-bottom: none;
+      }
+
+      /* Tighter placeholder so bio content has more room */
+      .sb-placeholder { padding: 14px 16px 12px; }
+      .sb-placeholder .icon { font-size: 22px; margin-bottom: 10px; }
+      .sb-placeholder .tc-title { font-size: 22px; margin-bottom: 3px; }
+      .sb-placeholder .tc-sub { font-size: 11px; margin-bottom: 10px; }
+      .sb-placeholder .tc-divider { margin-bottom: 10px; }
+      .sb-placeholder .tc-desc { font-size: 12px; margin-bottom: 10px; }
+      .sb-placeholder .tc-prompt { font-size: 11px; }
+      #sb-empty, #sb-bio { padding: 12px 14px; }
+      .bio-name { font-size: 20px; }
+      .bio-sub  { font-size: 13px; margin-bottom: 8px; }
+      .bio-notes { font-size: 13px; padding: 7px 9px; margin-bottom: 10px; }
+      .bio-section h3 { font-size: 11px; }
+      .label-card { padding: 7px 9px; font-size: 13px; }
+      .label-card .lc-name { font-size: 16px; }
+      .label-card .lc-heb  { font-size: 18px; }
+      .rel-item { font-size: 13px; }
+    }
+
+    /* ── Narrow landscape (phone on its side): slimmer sidebar ── */
+    @media (max-width: 900px) and (orientation: landscape) and (max-height: 500px) {
+      #sidebar { width: 300px; }
+      #logo { font-size: 20px; letter-spacing: 1px; }
+      #logo span { display: none; }
+      #search-wrap input { width: 200px; font-size: 14px; }
+      .hbtn { font-size: 13px; padding: 5px 9px; }
+    }
   </style>
 </head>
 <body>
@@ -284,7 +381,11 @@
       </div>
       <div class="sb-placeholder" id="sb-empty">
         <div class="icon">📜</div>
-        <p style="font-size:12px;">Click any person in the tree to view their biography.</p>
+        <div class="tc-title">PATRIA</div>
+        <div class="tc-sub">Biblical Family Tree</div>
+        <div class="tc-divider"></div>
+        <p class="tc-desc">Explore the lineages and relationships of the Bible — from the first days of Creation through the patriarchs, judges, and kings of Israel to the times of Jesus. Each person in the tree carries a story of faith, struggle, and covenant stretching across generations.  Every name has a meaning, explore the people of the Bible and learn how they've been called and what their names mean.</p>
+        <p class="tc-prompt">Click any person in the tree to view their biography.</p>
       </div>
       <div id="sb-bio" style="display:none;"></div>
     </div>
@@ -1100,11 +1201,27 @@ function initControls() {
   let collapsed = false;
   const sidebar = document.getElementById('sidebar');
   const togBtn  = document.getElementById('sidebar-toggle');
+  const isPortrait = () => window.matchMedia('(max-width: 800px) and (orientation: portrait)').matches;
+
+  function syncToggleBtn() {
+    togBtn.textContent = isPortrait()
+      ? (collapsed ? '▲' : '▼')
+      : (collapsed ? '▶' : '◀');
+  }
+
   togBtn.addEventListener('click', () => {
     collapsed = !collapsed;
     sidebar.classList.toggle('collapsed', collapsed);
-    togBtn.textContent = collapsed ? '▶' : '◀';
+    syncToggleBtn();
   });
+
+  window.addEventListener('orientationchange', () => {
+    collapsed = false;
+    sidebar.classList.remove('collapsed');
+    setTimeout(syncToggleBtn, 100); // wait for orientation to settle
+  });
+
+  syncToggleBtn();
 
   // Click canvas background → deselect
   svgEl.on('click', () => {
