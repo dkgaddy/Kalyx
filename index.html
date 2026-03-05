@@ -12,13 +12,13 @@
   <meta property="og:type"        content="website" />
   <meta property="og:url"         content="https://patria.explosiveconcepts.com" />
   <meta property="og:title"       content="PATRIA – Biblical Family Tree" />
-  <meta property="og:description" content="Explore the lineages and relationships of the Hebrew Bible — from Creation through the patriarchs, judges, and kings of Israel." />
+  <meta property="og:description" content="Explore the lineages and relationships of the Bible — from Creation through the patriarchs, judges, and kings of Israel." />
   <meta property="og:image"       content="https://patria.explosiveconcepts.com/og-image.png" />
 
   <!-- Twitter / X -->
   <meta name="twitter:card"        content="summary_large_image" />
   <meta name="twitter:title"       content="PATRIA – Biblical Family Tree" />
-  <meta name="twitter:description" content="Explore the lineages and relationships of the Hebrew Bible — from Creation through the patriarchs, judges, and kings of Israel." />
+  <meta name="twitter:description" content="Explore the lineages and relationships of the Bible — from Creation through the patriarchs, judges, and kings of Israel." />
   <meta name="twitter:image"       content="https://patria.explosiveconcepts.com/og-image.png" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://d3js.org/d3.v7.min.js"></script>
@@ -223,6 +223,16 @@
     }
 
     /* bio */
+    .bio-photo {
+      display: block;
+      width: calc(100% - 32px);
+      max-width: 340px;
+      aspect-ratio: 1;
+      object-fit: cover;
+      margin: 4px auto 16px;
+      border: 5px solid #ffffff;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+    }
     .bio-name { font-size: 26px; font-weight: 700; color: #1a1a3e; }
     .bio-sub  { font-size: 15px; color: #888; margin-bottom: 14px; }
     .bio-notes {
@@ -315,6 +325,7 @@
       .sb-placeholder .tc-desc { font-size: 12px; margin-bottom: 10px; }
       .sb-placeholder .tc-prompt { font-size: 11px; }
       #sb-empty, #sb-bio { padding: 12px 14px; }
+      .bio-photo { width: 110px; height: 110px; max-width: 110px; margin: 4px auto 10px; border-width: 3px; }
       .bio-name { font-size: 20px; }
       .bio-sub  { font-size: 13px; margin-bottom: 8px; }
       .bio-notes { font-size: 13px; padding: 7px 9px; margin-bottom: 10px; }
@@ -433,6 +444,7 @@ const FA_CIRCLE_MINUS = 'M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM184 2
 let personsMap       = {};
 let labelsMap        = {};
 let relsMap          = {};
+const photoCache     = new Set(); // person IDs confirmed to have a pix/{id}.jpg
 let childrenMap      = {};   // parentId → [childId]
 let motherMap        = {};   // childId → motherId
 let spouseMap        = {};   // husbandId → [wifeId]
@@ -459,6 +471,16 @@ async function loadCSV(path) {
     return r.text();
   });
   return Papa.parse(text, { header: true, skipEmptyLines: true }).data;
+}
+
+async function discoverPhotos() {
+  const ids = Object.keys(personsMap);
+  await Promise.all(ids.map(async id => {
+    try {
+      const res = await fetch(`pix/${id}.jpg`, { method: 'HEAD' });
+      if (res.ok) photoCache.add(id);
+    } catch { /* network error = no photo */ }
+  }));
 }
 
 async function loadAll() {
@@ -649,6 +671,17 @@ function buildCard(sel, idFn) {
       .attr('ry', AV_R - 4)
       .attr('fill', c.sil)
       .attr('opacity', 0.80);
+
+    // Photo – only added when confirmed to exist via discoverPhotos()
+    if (photoCache.has(id)) {
+      av.append('image')
+        .attr('x', AV_CX - AV_R)
+        .attr('y', AV_CY - AV_R)
+        .attr('width',  AV_R * 2)
+        .attr('height', AV_R * 2)
+        .attr('preserveAspectRatio', 'xMidYMid slice')
+        .attr('href', `pix/${id}.jpg`);
+    }
 
     /* ── Avatar circle border ring ── */
     g.append('circle')
@@ -882,6 +915,7 @@ function showBio(id) {
     </div>`).join('');
 
   bio.innerHTML = `
+    <img class="bio-photo" src="pix/${id}.jpg" onerror="this.style.display='none'" alt="${p.person_name}" />
     <div class="bio-name">${p.person_name}${p.surname ? ' ' + p.surname : ''}</div>
     <div class="bio-sub">${sexStr}${tribe}</div>
     ${(p.unique_attribute || p.person_notes) ? `<div class="bio-notes">${p.unique_attribute || p.person_notes}</div>` : ''}
@@ -1403,6 +1437,7 @@ async function main() {
   try {
     await loadAll();
     buildHierarchy();
+    await discoverPhotos();
     initControls();
     render();
     buildOrphanTrees();
