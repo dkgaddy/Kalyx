@@ -54,6 +54,7 @@
       color: #c8a85a;
       letter-spacing: 3px;
       line-height: 1;
+      cursor: pointer;
     }
     #logo span {
       font-size: 15px;
@@ -345,6 +346,75 @@
       #search-wrap input { width: 200px; font-size: 14px; }
       .hbtn { font-size: 13px; padding: 5px 9px; }
     }
+
+    /* Scripture reference links */
+    .sref {
+      color: #c8a85a;
+      cursor: pointer;
+      text-decoration: underline dotted;
+      font-style: normal;
+    }
+    .sref:hover { color: #e8c87a; text-decoration: underline; }
+
+    /* Scripture modal */
+    #scripture-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.72);
+      z-index: 2000;
+      align-items: center;
+      justify-content: center;
+    }
+    #scripture-backdrop.open { display: flex; }
+    #scripture-modal {
+      background: #181510;
+      border: 1px solid #c8a85a;
+      border-radius: 10px;
+      max-width: 580px;
+      width: 92%;
+      max-height: 78vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.7);
+      overflow: hidden;
+    }
+    #scripture-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 13px 18px 12px;
+      background: #221c0e;
+      border-bottom: 1px solid #c8a85a44;
+      flex-shrink: 0;
+    }
+    #scripture-modal-title {
+      font-family: Georgia, serif;
+      color: #c8a85a;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+    #scripture-modal-close {
+      background: none;
+      border: none;
+      color: #c8a85a;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 0 2px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+    #scripture-modal-close:hover { color: #fff; }
+    #scripture-modal-body {
+      padding: 18px 20px;
+      overflow-y: auto;
+      color: #ddd;
+      font-size: 14px;
+      line-height: 1.8;
+    }
+    .sv { margin-bottom: 6px; }
+    .sv-num { color: #c8a85a; font-size: 10px; font-weight: bold; margin-right: 5px; vertical-align: super; }
   </style>
 </head>
 <body>
@@ -424,6 +494,17 @@
   </div>
 </div>
 
+<!-- Scripture modal -->
+<div id="scripture-backdrop">
+  <div id="scripture-modal">
+    <div id="scripture-modal-header">
+      <div id="scripture-modal-title"></div>
+      <button id="scripture-modal-close">✕</button>
+    </div>
+    <div id="scripture-modal-body"></div>
+  </div>
+</div>
+
 <script>
 /* ══════════════════════════════════════
    PATRIA – complete JS rewrite
@@ -467,6 +548,85 @@ let orphanStartY  = 20000;  // y below main tree; computed in buildHierarchy
 let navHistory = [];   // ids of people viewed this session
 let navIndex   = -1;   // current position in navHistory
 
+let verseMap = {};  // {bookCode: {chNum: {vNum: text}}}
+
+const BOOK_MAP = {
+  // Standard XML codes (pass-through)
+  'GEN':'GEN','EXO':'EXO','LEV':'LEV','NUM':'NUM','DEU':'DEU','JOS':'JOS',
+  'JDG':'JDG','RUT':'RUT','1SA':'1SA','2SA':'2SA','1KI':'1KI','2KI':'2KI',
+  '1CH':'1CH','2CH':'2CH','EZR':'EZR','NEH':'NEH','EST':'EST','JOB':'JOB',
+  'PSA':'PSA','PRO':'PRO','ECC':'ECC','SNG':'SNG','ISA':'ISA','JER':'JER',
+  'LAM':'LAM','EZK':'EZK','DAN':'DAN','HOS':'HOS','JOL':'JOL','AMO':'AMO',
+  'OBA':'OBA','JON':'JON','MIC':'MIC','NAM':'NAM','HAB':'HAB','ZEP':'ZEP',
+  'HAG':'HAG','ZEC':'ZEC','MAL':'MAL','MAT':'MAT','MRK':'MRK','LUK':'LUK',
+  'JHN':'JHN','ACT':'ACT','ROM':'ROM','1CO':'1CO','2CO':'2CO','GAL':'GAL',
+  'EPH':'EPH','PHP':'PHP','COL':'COL','1TH':'1TH','2TH':'2TH','1TI':'1TI',
+  '2TI':'2TI','TIT':'TIT','PHM':'PHM','HEB':'HEB','JAS':'JAS','1PE':'1PE',
+  '2PE':'2PE','1JN':'1JN','2JN':'2JN','3JN':'3JN','JUD':'JUD','REV':'REV',
+  // Variants found in Person.csv data
+  'ACTS':'ACT','DEUT':'DEU','EZ':'EZK','NAH':'NAM','JN':'JHN',
+  // Title-case full names
+  'Genesis':'GEN','Exodus':'EXO','Leviticus':'LEV','Numbers':'NUM',
+  'Deuteronomy':'DEU','Joshua':'JOS','Judges':'JDG','Ruth':'RUT',
+  'Psalms':'PSA','Psalm':'PSA','Proverbs':'PRO','Daniel':'DAN',
+  'Esther':'EST','Nehemiah':'NEH','Ezra':'EZR','Hosea':'HOS',
+  'Amos':'AMO','Micah':'MIC','Nahum':'NAM','Malachi':'MAL',
+  'Jonah':'JON','Joel':'JOL','Obadiah':'OBA','Habakkuk':'HAB',
+  'Haggai':'HAG','Zechariah':'ZEC','Zephaniah':'ZEP',
+  'Matthew':'MAT','Mark':'MRK','Luke':'LUK','John':'JHN',
+  'Acts':'ACT','Romans':'ROM','Galatians':'GAL','Ephesians':'EPH',
+  'Philippians':'PHP','Colossians':'COL','Titus':'TIT',
+  'Philemon':'PHM','Hebrews':'HEB','James':'JAS','Revelation':'REV',
+  // Abbreviated partial names
+  'Neh':'NEH','Chr':'1CH','Sam':'1SA',
+  // Ambiguous short forms — best-effort defaults
+  'SA':'1SA','KI':'1KI','Ki':'1KI','CH':'1CH','CO':'1CO','TI':'1TI',
+};
+
+// Regex: matches "GEN 4:1", "1CO 15:45", "1 SA 14:3", "Exodus 2:23", with optional verse range
+const SREF_RE = /\b((?:\d\s?)?[A-Za-z]{2,})\s+(\d+):(\d+)(?:-(\d+))?/g;
+
+function linkifyRefs(text) {
+  if (!text || !Object.keys(verseMap).length) return text;
+  return text.replace(SREF_RE, (match, rawBook, ch, v1, v2) => {
+    const book = rawBook.replace(/\s/g, '');
+    const xmlBook = BOOK_MAP[book];
+    if (!xmlBook || !verseMap[xmlBook]) return match;
+    return `<a class="sref" data-ref="${xmlBook}|${ch}|${v1}|${v2||''}" data-label="${match}">${match}</a>`;
+  });
+}
+
+function openScriptureModal(xmlBook, ch, v1, v2, label) {
+  const chNum  = parseInt(ch);
+  const v1Num  = parseInt(v1);
+  const v2Num  = v2 ? parseInt(v2) : v1Num;
+  const chData = ((verseMap[xmlBook] || {})[chNum]) || {};
+  let html = '';
+  for (let v = v1Num; v <= v2Num; v++) {
+    const t = chData[v];
+    if (t) html += `<div class="sv"><span class="sv-num">${v}</span>${t}</div>`;
+  }
+  if (!html) html = '<div style="color:#888">Verse not found in database.</div>';
+  document.getElementById('scripture-modal-title').textContent = label;
+  document.getElementById('scripture-modal-body').innerHTML = html;
+  document.getElementById('scripture-backdrop').classList.add('open');
+}
+
+document.getElementById('scripture-modal-close').addEventListener('click', () => {
+  document.getElementById('scripture-backdrop').classList.remove('open');
+});
+document.getElementById('scripture-backdrop').addEventListener('click', e => {
+  if (e.target === e.currentTarget)
+    document.getElementById('scripture-backdrop').classList.remove('open');
+});
+document.addEventListener('click', e => {
+  const a = e.target.closest('.sref');
+  if (!a) return;
+  e.preventDefault();
+  const [b, ch, v1, v2] = a.dataset.ref.split('|');
+  openScriptureModal(b, ch, v1, v2, a.dataset.label);
+});
+
 /* ════════════════════════════════════════
    1. Load CSVs
 ════════════════════════════════════════ */
@@ -478,11 +638,25 @@ async function loadCSV(path) {
   return Papa.parse(text, { header: true, skipEmptyLines: true }).data;
 }
 
+async function loadBibleText() {
+  const text = await fetch('bibletext.xml').then(r => r.text());
+  const doc  = new DOMParser().parseFromString(text, 'text/xml');
+  doc.querySelectorAll('v').forEach(v => {
+    const b = v.getAttribute('b');
+    const c = parseInt(v.getAttribute('c'));
+    const n = parseInt(v.getAttribute('v'));
+    if (!verseMap[b])    verseMap[b]    = {};
+    if (!verseMap[b][c]) verseMap[b][c] = {};
+    verseMap[b][c][n] = v.textContent.trim();
+  });
+}
+
 async function loadAll() {
   const [persons, labels, rels] = await Promise.all([
     loadCSV('Person.csv'),
     loadCSV('PersonLabel.csv'),
     loadCSV('PersonRelationship.csv'),
+    loadBibleText(),
   ]);
 
   persons.forEach(p => { personsMap[p.person_id] = p; });
@@ -905,7 +1079,7 @@ function showBio(id) {
         ${l.greek_label ? `<div><div class="lc-key">Greek</div><div class="lc-val">${l.greek_label}${l.greek_label_transliterated ? ' ('+l.greek_label_transliterated+')' : ''}</div></div>` : ''}
         ${l.greek_label_meaning ? `<div><div class="lc-key">Gk. Meaning</div><div class="lc-val">${l.greek_label_meaning}</div></div>` : ''}
         ${l.greek_strongs_number && l.greek_strongs_number !== 'none' ? `<div><div class="lc-key">Gk. Strong's</div><div class="lc-val">${l.greek_strongs_number}</div></div>` : ''}
-        ${l.label_reference_id ? `<div><div class="lc-key">Reference</div><div class="lc-val">${l.label_reference_id}</div></div>` : ''}
+        ${l.label_reference_id ? `<div><div class="lc-key">Reference</div><div class="lc-val">${linkifyRefs(l.label_reference_id)}</div></div>` : ''}
       </div>
       ${l.label_notes ? `<div style="font-size:9px;color:#aaa;margin-top:3px;">${l.label_notes}</div>` : ''}
     </div>`).join('');
@@ -914,14 +1088,14 @@ function showBio(id) {
     <div class="rel-item">
       <span class="rel-type">${r.relationship_type} of</span>
       <span class="rel-name" data-id="${r.person_id_2}">${(personsMap[r.person_id_2] || {}).person_name || r.person_id_2}</span>
-      <span class="rel-ref">${r.reference_id || ''}</span>
+      <span class="rel-ref">${linkifyRefs(r.reference_id || '')}</span>
     </div>`).join('');
 
   bio.innerHTML = `
     <img class="bio-photo" src="pix/${id}.jpg" onerror="this.style.display='none'" alt="${p.person_name}" />
     <div class="bio-name">${p.person_name}${p.surname ? ' ' + p.surname : ''}</div>
     <div class="bio-sub">${sexStr}${tribe}</div>
-    ${(p.unique_attribute || p.person_notes) ? `<div class="bio-notes">${p.unique_attribute || p.person_notes}</div>` : ''}
+    ${(p.unique_attribute || p.person_notes) ? `<div class="bio-notes">${linkifyRefs(p.unique_attribute || p.person_notes)}</div>` : ''}
     ${labels.length ? `<div class="bio-section"><h3>Names &amp; Titles</h3>${labelCards}</div>` : ''}
     ${rels.length   ? `<div class="bio-section"><h3>Relationships</h3>${relRows}</div>` : ''}
   `;
@@ -1457,6 +1631,8 @@ async function main() {
       </p>`;
   }
 }
+
+document.getElementById('logo').addEventListener('click', () => location.reload());
 
 main();
 </script>
